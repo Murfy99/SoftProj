@@ -1,13 +1,11 @@
-import numpy as np
-from scipy.sparse.linalg import svds
 from rest_framework import viewsets, status
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
-from django.db.models import Avg
-from django.shortcuts import get_object_or_404
 from django.contrib.auth.models import User
 from .models import Movie, Rating
 from .serializers import MovieSerializer, RatingSerializer, UserSerializer
+from django.db.models import Avg
+from django.shortcuts import get_object_or_404
 
 class MovieViewSet(viewsets.ModelViewSet):
     queryset = Movie.objects.all()
@@ -22,15 +20,44 @@ class UserViewSet(viewsets.ModelViewSet):
     serializer_class = UserSerializer
 
 @api_view(['GET'])
-def user_ratings(request, user_id):
+def top_rated_movies(request):
+    top_movies = Movie.objects.annotate(average_rating=Avg('rating__rating')).order_by('-average_rating')[:10]
+    serializer = MovieSerializer(top_movies, many=True)
+    return Response(serializer.data)
+
+@api_view(['GET'])
+def movies_by_genre(request, genre):
+    genre_movies = Movie.objects.filter(genre__iexact=genre)
+    if not genre_movies:
+        return Response({"error": "No movies found for this genre"}, status=404)
+    serializer = MovieSerializer(genre_movies, many=True)
+    return Response(serializer.data)
+
+@api_view(['GET'])
+def user_profile(request, user_id):
     user = get_object_or_404(User, id=user_id)
+    serializer = UserSerializer(user)
+    return Response(serializer.data)
+
+
+@api_view(['GET'])
+def user_ratings(request, user_id):
+    try:
+        user = User.objects.get(id=user_id)
+    except User.DoesNotExist:
+        return Response({"error": "User not found"}, status=status.HTTP_404_NOT_FOUND)
+    
     ratings = Rating.objects.filter(user=user)
     serializer = RatingSerializer(ratings, many=True)
     return Response(serializer.data)
 
 @api_view(['GET'])
 def movie_details(request, movie_id):
-    movie = get_object_or_404(Movie, id=movie_id)
+    try:
+        movie = Movie.objects.get(id=movie_id)
+    except Movie.DoesNotExist:
+        return Response({"error": "Movie not found"}, status=status.HTTP_404_NOT_FOUND)
+    
     serializer = MovieSerializer(movie)
     return Response(serializer.data)
 
@@ -77,24 +104,4 @@ def recommend_movies(request):
     recommended_movie_ids = [movie_ids[i] for i in recommended_movie_indices]
     recommended_movies = Movie.objects.filter(id__in=recommended_movie_ids)
     serializer = MovieSerializer(recommended_movies, many=True)
-    return Response(serializer.data)
-
-@api_view(['GET'])
-def top_rated_movies(request):
-    top_movies = Movie.objects.annotate(average_rating=Avg('rating__rating')).order_by('-average_rating')[:10]
-    serializer = MovieSerializer(top_movies, many=True)
-    return Response(serializer.data)
-
-@api_view(['GET'])
-def movies_by_genre(request, genre):
-    genre_movies = Movie.objects.filter(genre__iexact=genre)
-    if not genre_movies:
-        return Response({"error": "No movies found for this genre"}, status=404)
-    serializer = MovieSerializer(genre_movies, many=True)
-    return Response(serializer.data)
-
-@api_view(['GET'])
-def user_profile(request, user_id):
-    user = get_object_or_404(User, id=user_id)
-    serializer = UserSerializer(user)
     return Response(serializer.data)
